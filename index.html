@@ -1,1 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Apple Music Playlist Player</title>
+  <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background-color: #f4f4f4;
+      padding: 40px;
+    }
+    h1 { font-size: 26px; }
+    #track-info img {
+      width: 300px;
+      border-radius: 12px;
+      margin: 20px 0;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    }
+    #track-info h2 { margin: 10px 0 5px; font-size: 22px; }
+    #track-info h3 { margin: 0; font-size: 18px; color: #666; }
+    button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      background-color: #007aff;
+      color: white;
+    }
+    #login, #player-ui, #error { display: none; }
+    #error { color: red; margin-top: 20px; }
+    #debug { margin-top: 20px; font-size: 14px; color: #333; }
+  </style>
+</head>
+<body>
 
+  <h1>🎶 My Apple Music Playlist</h1>
+
+  <div id="login">
+    <p>Please log in to Apple Music to start playback.</p>
+    <button id="login-button">🔐 Login with Apple Music</button>
+  </div>
+
+  <div id="player-ui">
+    <div id="track-info">
+      <img id="artwork" src="" alt="Cover Art">
+      <h2 id="title">–</h2>
+      <h3 id="artist">–</h3>
+    </div>
+    <button id="play-pause">▶️ Play</button>
+    <button id="next">⏭ Next</button>
+  </div>
+
+  <div id="error"></div>
+  <div id="debug"></div>
+
+  <script>
+    const debugLog = (msg) => {
+      console.log(msg);
+      document.getElementById('debug').innerHTML += `<div>📘 ${msg}</div>`;
+    };
+
+    debugLog("🎧 Script starting...");
+
+    window.onload = () => {
+      debugLog("🌍 Page fully loaded");
+
+      if (typeof MusicKit !== 'undefined') {
+        startMusicKit();
+      } else {
+        document.addEventListener('musickitloaded', startMusicKit);
+      }
+    };
+
+    function startMusicKit() {
+      debugLog("✅ MusicKit is available, initializing...");
+
+      MusicKit.configure({
+        developerToken: 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IlA1MkpGNDQ0TFEifQ.eyJpYXQiOjE3NDkwNjc1NzIsImV4cCI6MTc2NDYxOTU3MiwiaXNzIjoiWU9VUl9URUFNX0lEIn0.UpZ6TiZaCI3rsm9xasbLUwOkyNDto8P4fQ9vRXtwfmcatM03fhxSssr7I6sgMlS0irnKg0y67o-JhIKGGH6enQ',
+        app: {
+          name: 'Playlist Player',
+          build: '1.0'
+        }
+      });
+
+      setTimeout(() => {
+        const instance = MusicKit.getInstance();
+
+        if (!instance) {
+          showError("MusicKit instance could not be created.");
+          debugLog("❌ getInstance() returned null or undefined.");
+          return;
+        }
+
+        debugLog(`🤖 MusicKit instance: ${!!instance}`);
+        debugLog(`🔐 isAuthorized: ${instance.isAuthorized}`);
+
+        const loginUI = document.getElementById('login');
+        const playerUI = document.getElementById('player-ui');
+        const loginBtn = document.getElementById('login-button');
+        const errorBox = document.getElementById('error');
+
+        function showError(msg) {
+          errorBox.style.display = 'block';
+          errorBox.textContent = '❌ ' + msg;
+          debugLog(`❌ ${msg}`);
+        }
+
+        function updateTrackInfo(item) {
+          if (!item) return;
+          document.getElementById('artwork').src = item.artworkURL.replace('{w}x{h}bb', '300x300bb');
+          document.getElementById('title').textContent = item.title;
+          document.getElementById('artist').textContent = item.artistName;
+        }
+
+        document.getElementById('play-pause').addEventListener('click', async () => {
+          if (instance.player?.isPlaying) {
+            await instance.pause();
+            document.getElementById('play-pause').textContent = '▶️ Play';
+          } else {
+            await instance.play();
+            document.getElementById('play-pause').textContent = '⏸ Pause';
+          }
+        });
+
+        document.getElementById('next').addEventListener('click', () => {
+          instance.skipToNextItem();
+        });
+
+        const attachPlayerEvents = () => {
+          if (instance.player) {
+            instance.player.addEventListener('mediaItemDidChange', () => {
+              updateTrackInfo(instance.player.nowPlayingItem);
+              debugLog("🎵 Track changed.");
+            });
+          } else {
+            debugLog("⚠️ instance.player is undefined – retrying in 500ms...");
+            setTimeout(attachPlayerEvents, 500);
+          }
+        };
+
+        async function setupPlayer() {
+          try {
+            debugLog("📥 Setting up queue...");
+            await instance.setQueue({ playlist: 'pl.u-V0dJTBmdX1g' }); // your public playlist ID
+            instance.player.shuffleMode = MusicKit.PlayerShuffleMode.Songs;
+            await instance.play();
+            updateTrackInfo(instance.player.nowPlayingItem);
+            playerUI.style.display = 'block';
+            debugLog("✅ Playlist loaded and playback started");
+            attachPlayerEvents();
+          } catch (e) {
+            console.error("🚨 Failed to set queue or play:", e);
+            showError("Could not load or play playlist. Check ID or Apple Music subscription.");
+          }
+        }
+
+        loginBtn.addEventListener('click', async () => {
+          try {
+            debugLog("🔐 Requesting authorization...");
+            await instance.authorize();
+            loginUI.style.display = 'none';
+            setupPlayer();
+          } catch (e) {
+            console.error("🚫 Authorization failed:", e);
+            showError("Authorization with Apple Music failed.");
+          }
+        });
+
+        if (!instance.isAuthorized) {
+          debugLog("🔓 Not authorized – showing login");
+          loginUI.style.display = 'block';
+        } else {
+          debugLog("🚀 Already authorized – launching player");
+          setupPlayer();
+        }
+      }, 50); // slight delay to ensure MusicKit is ready
+    }
+  </script>
+
+</body>
+</html>
